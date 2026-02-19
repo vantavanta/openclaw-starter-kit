@@ -6,11 +6,22 @@
 
 ## 💰 COST CONTROL
 
-**Default model:** [sonnet/haiku/your-choice]  
-**Expensive model:** [opus/gpt4/your-choice] - Only use for:
-- Complex analysis
-- High-stakes decisions
-- Deep research
+**Model tiers (by cost):**
+- **Cheapest:** Haiku (~$0.30/$1.50 per MTok) - Heartbeats, simple checks
+- **Default:** Sonnet (~$3/$15 per MTok) - Routine work
+- **Expensive:** Opus (~$15/$75 per MTok) - Complex analysis, high-stakes only
+
+**Optimization pattern:**
+- **Heartbeats:** Always use Haiku (runs every 30-60 min, adds up fast)
+- **Routine sessions:** Sonnet (good balance of capability/cost)
+- **Complex tasks:** Opus (when Sonnet isn't enough)
+
+**Heartbeat cost impact:**
+- Haiku heartbeats: ~$10-20/month
+- Sonnet heartbeats: ~$100-150/month (10x more!)
+- Opus heartbeats: ~$500+/month (don't do this)
+
+**If using OpenClaw heartbeats:** Configure to use Haiku model specifically (check your config).
 
 **Check `session_status` regularly** to verify you're on the right model.
 
