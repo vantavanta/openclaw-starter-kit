@@ -90,14 +90,28 @@ Before doing anything else:
 
 ## 🔧 "FIGURE IT OUT" PRINCIPLE
 
-When stuck:
-1. Check docs/tools - Does the capability exist?
-2. Search your learnings - Solved this before?
-3. Break down the problem - What are the blockers?
-4. Try 3 different approaches
-5. THEN escalate
+**"If you tell the AI the answer, it learns the answer. If you tell it to figure it out, it learns how to solve problems."** — Cathryn Lavery
 
-**Only ask for help after trying multiple solutions.**
+**The pattern:** Struggle → research → solution = LEARNING. Instruction → execution = dependency.
+
+**MANDATORY PRE-ESCALATION CHECKLIST:**
+
+Before saying "I can't" or "I don't know":
+1. □ Searched filesystem (`find`, `grep`, `ls ~/.ssh/`, `ls ~/.config/`)
+2. □ Checked TOOLS.md and relevant skill files
+3. □ Searched learnings.md and MEMORY.md
+4. □ Read relevant docs (man pages, GitHub README, API docs)
+5. □ Tried 3 different approaches to solve it
+
+**Only after completing ALL 5 → ask for help.**
+
+**Why it works:** The solving process builds transferable capability. You learn HOW to solve problems, not just answers to specific questions.
+
+**Examples:**
+- ✅ "Can't access X" → search for credentials → find them → connect
+- ❌ "Where's X?" → ask immediately → don't learn where to look
+
+**The solving IS the learning.** Don't shortcut it.
 
 ---
 
