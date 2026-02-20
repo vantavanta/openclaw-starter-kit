@@ -24,10 +24,7 @@ import urllib.parse
 import urllib.error
 from datetime import datetime, timezone
 
-WORKSPACE = os.environ.get(
-    "OPENCLAW_WORKSPACE",
-    os.path.expanduser("~/.openclaw/workspace")
-)
+WORKSPACE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LINKS_DIR = os.path.join(WORKSPACE, "links")
 SECRETS_DIR = os.path.join(WORKSPACE, ".secrets")
 BEARER_TOKEN_PATH = os.path.join(SECRETS_DIR, "x_bearer_token")
@@ -206,11 +203,35 @@ def bookmark_tweet(tweet_id: str) -> bool:
         print(f"[bookmark] Error: {e}", file=sys.stderr)
     return False
 
+def fetch_thread_via_api(conversation_id: str, author_id: str, token: str) -> list[dict]:
+    """Fetch all tweets in a thread/conversation by the same author."""
+    query = urllib.parse.quote(f"conversation_id:{conversation_id} from:{author_id} -is:retweet")
+    url = (
+        f"https://api.twitter.com/2/tweets/search/recent"
+        f"?query={query}"
+        f"&max_results=100"
+        f"&tweet.fields=created_at,author_id,text,id"
+        f"&expansions=author_id"
+        f"&user.fields=name,username"
+        f"&sort_order=recency"
+    )
+    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read())
+            tweets = data.get("data", [])
+            # Sort oldest first (thread order)
+            tweets.sort(key=lambda t: t.get("id", "0"))
+            return [t.get("text", "") for t in tweets]
+    except Exception as e:
+        print(f"[thread] Failed to fetch thread: {e}", file=sys.stderr)
+        return []
+
 def fetch_via_api(tweet_id: str, token: str) -> dict | None:
-    """Fetch tweet via X API v2."""
+    """Fetch tweet via X API v2. Detects threads and fetches all parts."""
     url = (
         f"https://api.twitter.com/2/tweets/{tweet_id}"
-        f"?tweet.fields=created_at,author_id,text,entities,public_metrics"
+        f"?tweet.fields=created_at,author_id,text,entities,public_metrics,conversation_id"
         f"&expansions=author_id"
         f"&user.fields=name,username"
     )
@@ -221,9 +242,24 @@ def fetch_via_api(tweet_id: str, token: str) -> dict | None:
             tweet = data.get("data", {})
             users = {u["id"]: u for u in data.get("includes", {}).get("users", [])}
             author = users.get(tweet.get("author_id", ""), {})
+            conversation_id = tweet.get("conversation_id", tweet_id)
+
+            # Detect thread: conversation_id differs from tweet_id (reply in a thread)
+            # or try fetching conversation to see if there are more tweets
+            thread_tweets = []
+            if conversation_id:
+                thread_tweets = fetch_thread_via_api(
+                    conversation_id, tweet.get("author_id", ""), token
+                )
+                # Filter out duplicates and ensure root tweet is included
+                root_text = tweet.get("text", "")
+                if root_text not in thread_tweets:
+                    thread_tweets = [root_text] + thread_tweets
+
             return {
                 "id": tweet_id,
                 "text": tweet.get("text", ""),
+                "thread": thread_tweets if len(thread_tweets) > 1 else [],
                 "author_name": author.get("name", "Unknown"),
                 "author_handle": author.get("username", "unknown"),
                 "created_at": tweet.get("created_at", ""),
@@ -319,12 +355,21 @@ def archive_tweet(url: str, tweet: dict, tag: str = "other", note: str = "") -> 
     source_map = {"x_api": "✅ API", "oembed": "✅ oEmbed", "web_scrape": "⚠️ scraped"}
     source_badge = source_map.get(tweet['source'], "⚠️ unknown")
 
+    thread = tweet.get("thread", [])
+    is_thread = len(thread) > 1
+
     entry = f"""
 ---
-### [{now}] {handle} `#{tag}` {source_badge}
+### [{now}] {handle} `#{tag}` {source_badge}{' 🧵 thread' if is_thread else ''}
 **URL:** {url}
-**Tweet:** {tweet['text']}
 """
+    if is_thread:
+        entry += "**Thread:**\n"
+        for i, t in enumerate(thread, 1):
+            entry += f"{i}. {t}\n\n"
+    else:
+        entry += f"**Tweet:** {tweet['text']}\n"
+
     if note:
         entry += f"**Note:** {note}\n"
     if tweet['created_at']:
@@ -349,6 +394,7 @@ def main():
     tag = "other"
     note = ""
     do_follow = False
+    do_bookmark = False
 
     # Parse optional args
     args = sys.argv[2:]
@@ -359,6 +405,8 @@ def main():
             note = args[i + 1]
         elif a == "--follow":
             do_follow = True
+        elif a == "--bookmark":
+            do_bookmark = True
 
     tweet_id = extract_tweet_id(url)
     if not tweet_id:
@@ -389,13 +437,22 @@ def main():
         sys.exit(2)
 
     path = archive_tweet(url, tweet, tag=tag, note=note)
+    thread = tweet.get("thread", [])
     print(f"Archived → {path}")
     print(f"Author: {tweet['author_name']} ({tweet['author_handle']})")
-    print(f"Text: {tweet['text'][:200]}")
+    if len(thread) > 1:
+        print(f"Thread: {len(thread)} tweets")
+        for i, t in enumerate(thread, 1):
+            print(f"  {i}. {t[:100]}{'...' if len(t) > 100 else ''}")
+    else:
+        print(f"Text: {tweet['text'][:200]}")
     print(f"Source: {tweet['source']}")
 
     if do_follow and tweet.get("author_handle"):
         follow_user(tweet["author_handle"], tweet.get("id", ""))
+
+    if do_bookmark:
+        bookmark_tweet(tweet_id)
 
 if __name__ == "__main__":
     main()
