@@ -395,6 +395,7 @@ def main():
     note = ""
     do_follow = False
     do_bookmark = False
+    fetch_only = False
 
     # Parse optional args
     args = sys.argv[2:]
@@ -405,6 +406,8 @@ def main():
             note = args[i + 1]
         elif a == "--follow":
             do_follow = True
+        elif a == "--fetch-only":
+            fetch_only = True
         elif a == "--bookmark":
             do_bookmark = True
 
@@ -436,8 +439,20 @@ def main():
         print("ERROR: Could not fetch tweet — refusing to archive without real content.")
         sys.exit(2)
 
-    path = archive_tweet(url, tweet, tag=tag, note=note)
     thread = tweet.get("thread", [])
+
+    if fetch_only:
+        print("[fetch-only — not archived]")
+        if len(thread) > 1:
+            print(f"Thread: {len(thread)} tweets")
+            for i, t in enumerate(thread, 1):
+                print(f"  {i}. {t[:200]}{'...' if len(t) > 200 else ''}")
+        else:
+            print(f"Text: {tweet['text']}")
+        print(f"Source: {tweet['source']}")
+        sys.exit(0)
+
+    path = archive_tweet(url, tweet, tag=tag, note=note)
     print(f"Archived → {path}")
     print(f"Author: {tweet['author_name']} ({tweet['author_handle']})")
     if len(thread) > 1:
