@@ -1,0 +1,22 @@
+# Secrets — never commit
+.secrets/
+*.secret
+x_bearer_token
+x_api_key
+x_api_secret
+x_access_token
+x_access_secret
+x_cookies.json
+x_oauth2_token.json
+
+# Local env
+.env
+.env.*
+*.pem
+*.key
+
+# Runtime
+__pycache__/
+*.pyc
+.venv/
+node_modules/
