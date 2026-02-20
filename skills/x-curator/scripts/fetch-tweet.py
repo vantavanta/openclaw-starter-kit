@@ -203,6 +203,53 @@ def bookmark_tweet(tweet_id: str) -> bool:
         print(f"[bookmark] Error: {e}", file=sys.stderr)
     return False
 
+def fetch_article_via_safari(article_url: str) -> str | None:
+    """Read an X Article by opening it in Safari (requires Allow JavaScript from Apple Events)."""
+    import subprocess
+    script = f'''
+tell application "Safari"
+    activate
+    set newTab to make new tab at end of tabs of front window
+    set URL of newTab to "{article_url}"
+    delay 6
+    set pageText to do JavaScript "document.body.innerText.substring(0, 5000)" in newTab
+    close newTab
+    return pageText
+end tell
+'''
+    try:
+        result = subprocess.run(
+            ["osascript", "-e", script],
+            capture_output=True, text=True, timeout=30
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            text = result.stdout.strip()
+            # Filter out X navigation noise
+            if len(text) > 200 and "You must enable" not in text:
+                return text
+    except Exception as e:
+        print(f"[safari] Failed: {e}", file=sys.stderr)
+    return None
+
+def resolve_tco_url(short_url: str) -> str | None:
+    """Follow a t.co redirect to get the real URL."""
+    try:
+        req = urllib.request.Request(short_url, method="HEAD",
+            headers={"User-Agent": "Mozilla/5.0"})
+        req.get_method = lambda: "HEAD"
+        # Don't follow redirect — just get Location header
+        import http.client
+        from urllib.parse import urlparse
+        parsed = urlparse(short_url)
+        conn = http.client.HTTPSConnection(parsed.netloc, timeout=5)
+        conn.request("HEAD", parsed.path)
+        resp = conn.getresponse()
+        location = resp.getheader("Location")
+        conn.close()
+        return location
+    except:
+        return None
+
 def fetch_thread_via_api(conversation_id: str, author_id: str, token: str) -> list[dict]:
     """Fetch all tweets in a thread/conversation by the same author."""
     query = urllib.parse.quote(f"conversation_id:{conversation_id} from:{author_id} -is:retweet")
@@ -256,14 +303,31 @@ def fetch_via_api(tweet_id: str, token: str) -> dict | None:
                 if root_text not in thread_tweets:
                     thread_tweets = [root_text] + thread_tweets
 
+            tweet_text = tweet.get("text", "")
+
+            # Check if tweet is just a t.co link → might be an X Article
+            tco_match = re.search(r"https://t\.co/\S+", tweet_text)
+            article_content = None
+            if tco_match and tweet_text.strip() == tco_match.group(0).strip():
+                real_url = resolve_tco_url(tco_match.group(0))
+                if real_url and ("x.com/i/article" in real_url or "twitter.com/i/article" in real_url):
+                    print(f"[article] Detected X Article — fetching via Safari...")
+                    article_content = fetch_article_via_safari(real_url)
+                    if article_content:
+                        tweet_text = article_content
+                        print(f"[article] ✅ Got {len(article_content)} chars")
+                    else:
+                        print(f"[article] ⚠️ Safari fetch failed (is Safari open and JS enabled?)")
+
             return {
                 "id": tweet_id,
-                "text": tweet.get("text", ""),
+                "text": tweet_text,
                 "thread": thread_tweets if len(thread_tweets) > 1 else [],
                 "author_name": author.get("name", "Unknown"),
                 "author_handle": author.get("username", "unknown"),
                 "created_at": tweet.get("created_at", ""),
                 "source": "x_api",
+                "is_article": bool(article_content),
             }
     except Exception as e:
         print(f"[API] Failed: {e}", file=sys.stderr)
@@ -443,7 +507,9 @@ def main():
 
     if fetch_only:
         print("[fetch-only — not archived]")
-        if len(thread) > 1:
+        if tweet.get("is_article"):
+            print(f"[X Article]\n{tweet['text'][:3000]}")
+        elif len(thread) > 1:
             print(f"Thread: {len(thread)} tweets")
             for i, t in enumerate(thread, 1):
                 print(f"  {i}. {t[:200]}{'...' if len(t) > 200 else ''}")
